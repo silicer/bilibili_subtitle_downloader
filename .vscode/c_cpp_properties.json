@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:\\Users\\silic\\scoop\\apps\\vcpkg\\current\\installed\\x64-mingw-static\\include"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-clang-x64",
+            "configurationProvider": "${workspaceFolder}/build/compile_commands.json"
+        }
+    ],
+    "version": 4
+}

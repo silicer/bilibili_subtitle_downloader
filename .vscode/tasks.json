@@ -1,0 +1,62 @@
+{
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "C/C++: clang++.exe 生成活动文件",
+            "command": "C:\\Users\\silic\\scoop\\apps\\winlibs-mingw-llvm-msvcrt\\current\\bin\\clang++.exe",
+            "args": [
+                "-fcolor-diagnostics",
+                "-fansi-escape-codes",
+                "-I",
+                "C:\\Users\\silic\\scoop\\apps\\vcpkg\\current\\installed\\x64-mingw-static\\include",
+                "-L",
+                "C:/Users/silic/scoop/apps/vcpkg/current/installed/x64-mingw-static/lib",
+                "-g",
+                "${file}",
+                "-o",
+                "${workspaceFolder}\\build\\${fileBasenameNoExtension}.exe"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": "build",
+            "detail": "调试器生成的任务。"
+        },
+        {
+            "type": "cmake",
+            "label": "CMake: configure",
+            "command": "configure",
+            "problemMatcher": [],
+            "detail": "CMake template configure task"
+        },
+        {
+            "type": "cmake",
+            "label": "CMake: build",
+            "command": "build",
+            "targets": [
+                "subtitle"
+            ],
+            "group": "build",
+            "problemMatcher": [],
+            "detail": "CMake template build task"
+        },
+        {
+            "type": "cmake",
+            "label": "CMake: build",
+            "command": "build",
+            "targets": [
+                "subtitle"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [],
+            "detail": "CMake template build task"
+        }
+    ],
+    "version": "2.0.0"
+}

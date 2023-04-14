@@ -1,7 +1,8 @@
 #include <Windows.h>
+#include <cpr/cpr.h>
+
 #include <chrono>
 #include <codecvt>
-#include <cpr/cpr.h>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>

@@ -12,5 +12,8 @@
 			"CMAKE_GENERATOR": "MinGW Makefiles",
 			"CMAKE_PREFIX_PATH": "C:/Users/silic/scoop/apps/vcpkg/current/installed/x64-mingw-static"
 		  }
+	},
+	"recommendations": {
+		
 	}
 }

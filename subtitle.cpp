@@ -1,19 +1,23 @@
-#include <Windows.h>
-#include <cpr/cpr.h>
-
+// #include <Windows.h>
 #include <chrono>
 #include <codecvt>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <iterator>
+// #include <iterator>
 #include <locale>
 #include <nlohmann/json.hpp>
 #include <ostream>
 #include <regex>
 #include <string>
-#include <utility>
+#include <sqlite3.h>
+#include <cpp-base64/base64.cpp>
+#include <cryptopp/aes.h>
+#include <cryptopp/gcm.h>
+#include <cryptopp/filters.h>
+#include <vector>
+// #include <utility>
 
 #ifdef _WIN32
 #include <cstdlib>
@@ -30,8 +34,106 @@ const std::string MEDIA_INFO_HOST =
 const std::string SUBTITLE_INFO_HOST = "https://api.bilibili.com/x/player/v2";
 const std::string CONVERTER_URL = "https://api.zhconvert.org/convert";
 
+std::vector<byte> extract_aes_key_frin_local_state() {
+  std::string local_state_path = static_cast<std::string>(getenv(HOME_ENV)) +
+                                 "/AppData/Local/Microsoft/Edge/User Data/"
+                                 "Local State";
+  std::ifstream local_state_file(local_state_path);
+  if (!local_state_file.is_open()) {
+    std::cerr << "Error: Failed to open file." << std::endl;
+    exit(-1);
+  }
+  json local_state = json::parse(local_state_file);
+  std::string aes_key = local_state["os_crypt"]["encrypted_key"];
+  std::cout << aes_key << std::endl;
+  // aes_key = aes_key.substr(5);
+  // base64 decode aes_key to bytes
+  std::string aes_key_decoded = base64_decode(aes_key);
+  aes_key_decoded = aes_key_decoded.substr(5);
+  // decrypt aes_key using DPAPI
+  DATA_BLOB input;
+  DATA_BLOB output;
+  LPWSTR pDescrOut = NULL;
+  input.pbData = reinterpret_cast<BYTE *>(aes_key_decoded.data());
+  input.cbData = aes_key_decoded.size();
+  if (!CryptUnprotectData(&input, &pDescrOut, nullptr, nullptr, nullptr, 0, &output)) {
+    std::cerr << "Error: Failed to decrypt data." << std::endl;
+    exit(-1);
+  }
+  std::vector<byte> aes_key_decrypted(output.pbData, output.pbData + output.cbData);
+  std::wcout << pDescrOut << std::endl;
+  LocalFree(pDescrOut);
+  LocalFree(output.pbData);
+  return aes_key_decrypted;
+}
+
+std::string decrypt_with_aes_gcm(const std::string &encrypted_data, const std::vector<byte> &key, const std::string &iv) {
+    // std::cout << "encrypted_data: " << encrypted_data << std::endl;
+    // std::cout << "key: " << key << std::endl;
+    // std::cout << "iv: " << iv << std::endl;
+    try {
+        CryptoPP::GCM<CryptoPP::AES>::Decryption decryption;
+        decryption.SetKeyWithIV(key.data(), key.size(), (byte*)iv.data(), iv.size());
+
+        std::string decrypted_data;
+        CryptoPP::StringSource ss(encrypted_data, true,
+            new CryptoPP::AuthenticatedDecryptionFilter(decryption,
+                new CryptoPP::StringSink(decrypted_data)
+            )
+        );
+
+        return decrypted_data;
+    } catch (const CryptoPP::Exception& e) {
+        // Handle decryption error
+        std::cerr << "Decryption error: " << e.what() << std::endl;
+        return "";
+    }
+}
+
+// A function that returns a cookie string reading of a specific domain from a cookie file of Chrome
+std::string get_cookie(const std::string &domain) {
+  std::string cookie_path = static_cast<std::string>(getenv(HOME_ENV)) +
+                            "/AppData/Local/Microsoft/Edge/User Data/"
+                            "Default/Network/Cookies";
+  sqlite3 *db;
+  sqlite3_stmt *stmt;
+  int rc = sqlite3_open(cookie_path.c_str(), &db);
+  if (rc != SQLITE_OK) {
+    std::cerr << "Error: Failed to open database." << std::endl;
+    exit(-1);
+  }
+  std::string sql = "SELECT encrypted_value FROM cookies WHERE host_key = '" +
+                    domain + "' AND name = 'SESSDATA'";
+  rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+  if (rc != SQLITE_OK) {
+    std::cerr << "Error: Failed to prepare statement." << std::endl;
+    exit(-1);
+  }
+  rc = sqlite3_step(stmt);
+  if (rc != SQLITE_ROW) {
+    std::cerr << "Error: Failed to step." << std::endl;
+    exit(-1);
+  }
+  std::string encrypted_value(
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0)));
+  std::string encrypted_data = encrypted_value.substr(3);
+  std::string iv = encrypted_data.substr(0, 12);
+  encrypted_data = encrypted_data.substr(12);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  auto aes_key = extract_aes_key_frin_local_state();
+  // std::cout << "aes_key: " << aes_key << std::endl;
+  std::string cookie = decrypt_with_aes_gcm(encrypted_data, aes_key, iv);
+  return cookie;
+}
+
 std::pair<std::string, std::string> get_subtitle(std::string ep_id) {
-  cpr::Response res = cpr::Get(cpr::Url{MEDIA_INFO_HOST + ep_id});
+  std::string cookie = get_cookie(".bilibili.com");
+  cpr::Session session;
+  session.SetCookies(cpr::Cookies{{"SESSDATA", cookie}});
+  session.SetHeader(cpr::Header{{"User-Agent", "curl/8.0.1"}, {"Cookie", "SESSDATA=" + cookie}});
+  session.SetUrl(cpr::Url{MEDIA_INFO_HOST + ep_id});
+  cpr::Response res = session.Get();
   int ep_id_int = std::stoi(ep_id);
   json media_info = json::parse(res.text)["result"];
   int season_id = media_info["season_id"];
@@ -46,20 +148,23 @@ std::pair<std::string, std::string> get_subtitle(std::string ep_id) {
                           {"season_id", std::to_string(season_id)},
                           {"ep_id", ep_id}};
       std::string title = episode["index_title"];
-      json subtitle_info =
-          json::parse(cpr::Get(cpr::Url{SUBTITLE_INFO_HOST}, param).text);
+      session.SetUrl(cpr::Url{SUBTITLE_INFO_HOST});
+      session.SetParameters(param);
+      cpr::Response subtitle_info_res = session.Get();
+      std::cout << subtitle_info_res.text << std::endl;
+      json subtitle_info = json::parse(subtitle_info_res.text);
       std::string subtitle_url =
           "https:" +
           subtitle_info["data"]["subtitle"]["subtitles"][0]["subtitle_url"]
               .get<std::string>();
-      return std::make_pair(title, cpr::Get(cpr::Url{subtitle_url}).text);
+      return {title, cpr::Get(cpr::Url{subtitle_url}).text};
     }
   }
   std::cout << "Subtitle Not Found!" << std::endl;
   exit(-1);
 }
 
-std::string json2srt(std::string data) {
+std::string json2srt(const std::string & data) {
   constexpr auto timestamp_to_time = [](float myTime) -> std::string {
     auto timestamp = static_cast<unsigned long long>(myTime * 1000);
     // Convert timestamp to time_point
@@ -93,14 +198,14 @@ std::string json2srt(std::string data) {
   return result;
 }
 
-std::string cht2chs(std::string content) {
+std::string cht2chs(const std::string & content) {
   cpr::Payload param = cpr::Payload{{"text", content}, {"converter", "China"}};
   cpr::Response res = cpr::Post(cpr::Url{CONVERTER_URL}, param);
   auto response = json::parse(res.text);
   return response["data"]["text"].get<std::string>();
 }
 
-void write_desktop(std::string content, std::string filename) {
+void write_desktop(const std::string & content, std::string filename) {
   std::regex pattern("[/\\:*?\"<>|]");
   filename = std::regex_replace(filename, pattern, "_");
 
@@ -121,8 +226,10 @@ void write_desktop(std::string content, std::string filename) {
 }
 
 int main() {
+  #ifdef _WIN32
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
+  #endif
   std::string ep_id_str;
   std::cout << "ep_id: ";
   std::cin >> ep_id_str;

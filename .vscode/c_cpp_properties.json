@@ -4,7 +4,7 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/**",
-                "C:\\Users\\silic\\scoop\\apps\\vcpkg\\current\\installed\\x64-mingw-static\\include"
+                "C:/Users/silic/scoop/apps/vcpkg/current/installed/x64-mingw-static/include/**"
             ],
             "defines": [
                 "_DEBUG",

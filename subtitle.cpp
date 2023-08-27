@@ -1,4 +1,4 @@
-// #include <Windows.h>
+#include <cpr/cpr.h>
 #include <chrono>
 #include <codecvt>
 #include <filesystem>
@@ -22,6 +22,7 @@
 #ifdef _WIN32
 #include <cstdlib>
 #define HOME_ENV "USERPROFILE"
+#include <Windows.h>
 #else
 #include <unistd.h>
 #define HOME_ENV "HOME"
@@ -45,7 +46,6 @@ std::vector<byte> extract_aes_key_frin_local_state() {
   }
   json local_state = json::parse(local_state_file);
   std::string aes_key = local_state["os_crypt"]["encrypted_key"];
-  std::cout << aes_key << std::endl;
   // aes_key = aes_key.substr(5);
   // base64 decode aes_key to bytes
   std::string aes_key_decoded = base64_decode(aes_key);
@@ -68,9 +68,6 @@ std::vector<byte> extract_aes_key_frin_local_state() {
 }
 
 std::string decrypt_with_aes_gcm(const std::string &encrypted_data, const std::vector<byte> &key, const std::string &iv) {
-    // std::cout << "encrypted_data: " << encrypted_data << std::endl;
-    // std::cout << "key: " << key << std::endl;
-    // std::cout << "iv: " << iv << std::endl;
     try {
         CryptoPP::GCM<CryptoPP::AES>::Decryption decryption;
         decryption.SetKeyWithIV(key.data(), key.size(), (byte*)iv.data(), iv.size());
@@ -122,7 +119,6 @@ std::string get_cookie(const std::string &domain) {
   sqlite3_finalize(stmt);
   sqlite3_close(db);
   auto aes_key = extract_aes_key_frin_local_state();
-  // std::cout << "aes_key: " << aes_key << std::endl;
   std::string cookie = decrypt_with_aes_gcm(encrypted_data, aes_key, iv);
   return cookie;
 }
@@ -151,16 +147,16 @@ std::pair<std::string, std::string> get_subtitle(std::string ep_id) {
       session.SetUrl(cpr::Url{SUBTITLE_INFO_HOST});
       session.SetParameters(param);
       cpr::Response subtitle_info_res = session.Get();
-      std::cout << subtitle_info_res.text << std::endl;
       json subtitle_info = json::parse(subtitle_info_res.text);
       std::string subtitle_url =
           "https:" +
           subtitle_info["data"]["subtitle"]["subtitles"][0]["subtitle_url"]
               .get<std::string>();
-      return {title, cpr::Get(cpr::Url{subtitle_url}).text};
+      session.SetUrl(cpr::Url{subtitle_url});
+      session.SetParameters({});
+      return {title, session.Get().text};
     }
   }
-  std::cout << "Subtitle Not Found!" << std::endl;
   exit(-1);
 }
 
@@ -231,7 +227,6 @@ int main() {
   SetConsoleCP(CP_UTF8);
   #endif
   std::string ep_id_str;
-  std::cout << "ep_id: ";
   std::cin >> ep_id_str;
   auto result_tmp = get_subtitle(ep_id_str);
   std::string title = result_tmp.first;

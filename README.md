@@ -1,6 +1,6 @@
 # Simple Bilibili Bangumi Subtitle Downloader
 
-A very simple Bilibili bangumi subtitle downlodaer written by C++. You need these libraries to compile the program.
+A very simple Bilibili bangumi subtitle downlodaer written in C++. You need these libraries to compile the program.
 
 - [nlohmann/json](https://github.com/nlohmann/json)
 - [libcpr/cpr](https://github.com/libcpr/cpr)

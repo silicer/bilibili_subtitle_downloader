@@ -5,122 +5,49 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-// #include <iterator>
 #include <locale>
 #include <nlohmann/json.hpp>
 #include <ostream>
 #include <regex>
 #include <string>
-#include <sqlite3.h>
-#include <cpp-base64/base64.cpp>
-#include <cryptopp/aes.h>
-#include <cryptopp/gcm.h>
-#include <cryptopp/filters.h>
-#include <vector>
-// #include <utility>
+
+#include "utils/cookie_utils.h"
 
 #ifdef _WIN32
-#include <cstdlib>
 #define HOME_ENV "USERPROFILE"
 #include <Windows.h>
 #else
-#include <unistd.h>
 #define HOME_ENV "HOME"
 #endif
 
 using json = nlohmann::json;
+
+std::pair<std::string, std::string> get_subtitle(std::string ep_id);
+std::string json2srt(const std::string & data);
+std::string cht2chs(const std::string & content);
+void write_desktop(const std::string & content, std::string filename);
 
 const std::string MEDIA_INFO_HOST =
     "https://bangumi.bilibili.com/view/web_api/season?ep_id=";
 const std::string SUBTITLE_INFO_HOST = "https://api.bilibili.com/x/player/v2";
 const std::string CONVERTER_URL = "https://api.zhconvert.org/convert";
 
-std::vector<byte> extract_aes_key_frin_local_state() {
-  std::string local_state_path = static_cast<std::string>(getenv(HOME_ENV)) +
-                                 "/AppData/Local/Microsoft/Edge/User Data/"
-                                 "Local State";
-  std::ifstream local_state_file(local_state_path);
-  if (!local_state_file.is_open()) {
-    std::cerr << "Error: Failed to open file." << std::endl;
-    exit(-1);
-  }
-  json local_state = json::parse(local_state_file);
-  std::string aes_key = local_state["os_crypt"]["encrypted_key"];
-  // aes_key = aes_key.substr(5);
-  // base64 decode aes_key to bytes
-  std::string aes_key_decoded = base64_decode(aes_key);
-  aes_key_decoded = aes_key_decoded.substr(5);
-  // decrypt aes_key using DPAPI
-  DATA_BLOB input;
-  DATA_BLOB output;
-  LPWSTR pDescrOut = NULL;
-  input.pbData = reinterpret_cast<BYTE *>(aes_key_decoded.data());
-  input.cbData = aes_key_decoded.size();
-  if (!CryptUnprotectData(&input, &pDescrOut, nullptr, nullptr, nullptr, 0, &output)) {
-    std::cerr << "Error: Failed to decrypt data." << std::endl;
-    exit(-1);
-  }
-  std::vector<byte> aes_key_decrypted(output.pbData, output.pbData + output.cbData);
-  std::wcout << pDescrOut << std::endl;
-  LocalFree(pDescrOut);
-  LocalFree(output.pbData);
-  return aes_key_decrypted;
-}
-
-std::string decrypt_with_aes_gcm(const std::string &encrypted_data, const std::vector<byte> &key, const std::string &iv) {
-    try {
-        CryptoPP::GCM<CryptoPP::AES>::Decryption decryption;
-        decryption.SetKeyWithIV(key.data(), key.size(), (byte*)iv.data(), iv.size());
-
-        std::string decrypted_data;
-        CryptoPP::StringSource ss(encrypted_data, true,
-            new CryptoPP::AuthenticatedDecryptionFilter(decryption,
-                new CryptoPP::StringSink(decrypted_data)
-            )
-        );
-
-        return decrypted_data;
-    } catch (const CryptoPP::Exception& e) {
-        // Handle decryption error
-        std::cerr << "Decryption error: " << e.what() << std::endl;
-        return "";
-    }
-}
-
-// A function that returns a cookie string reading of a specific domain from a cookie file of Chrome
-std::string get_cookie(const std::string &domain) {
-  std::string cookie_path = static_cast<std::string>(getenv(HOME_ENV)) +
-                            "/AppData/Local/Microsoft/Edge/User Data/"
-                            "Default/Network/Cookies";
-  sqlite3 *db;
-  sqlite3_stmt *stmt;
-  int rc = sqlite3_open(cookie_path.c_str(), &db);
-  if (rc != SQLITE_OK) {
-    std::cerr << "Error: Failed to open database." << std::endl;
-    exit(-1);
-  }
-  std::string sql = "SELECT encrypted_value FROM cookies WHERE host_key = '" +
-                    domain + "' AND name = 'SESSDATA'";
-  rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
-  if (rc != SQLITE_OK) {
-    std::cerr << "Error: Failed to prepare statement." << std::endl;
-    exit(-1);
-  }
-  rc = sqlite3_step(stmt);
-  if (rc != SQLITE_ROW) {
-    std::cerr << "Error: Failed to step." << std::endl;
-    exit(-1);
-  }
-  std::string encrypted_value(
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0)));
-  std::string encrypted_data = encrypted_value.substr(3);
-  std::string iv = encrypted_data.substr(0, 12);
-  encrypted_data = encrypted_data.substr(12);
-  sqlite3_finalize(stmt);
-  sqlite3_close(db);
-  auto aes_key = extract_aes_key_frin_local_state();
-  std::string cookie = decrypt_with_aes_gcm(encrypted_data, aes_key, iv);
-  return cookie;
+int main() {
+  #ifdef _WIN32
+  SetConsoleOutputCP(CP_UTF8);
+  SetConsoleCP(CP_UTF8);
+  #endif
+  std::string ep_id_str;
+  std::cout << "Please input the episode id: ";
+  std::cin >> ep_id_str;
+  auto result_tmp = get_subtitle(ep_id_str);
+  std::string title = result_tmp.first;
+  std::string data = result_tmp.second;
+  std::string cht_subtitle = json2srt(data);
+  std::string chs_subtitle = cht2chs(cht_subtitle);
+  title = cht2chs(title);
+  write_desktop(chs_subtitle, title);
+  return 0;
 }
 
 std::pair<std::string, std::string> get_subtitle(std::string ep_id) {
@@ -157,6 +84,7 @@ std::pair<std::string, std::string> get_subtitle(std::string ep_id) {
       return {title, session.Get().text};
     }
   }
+  std::cerr << "Error: Failed to get subtitle. Cannot find the episode." << std::endl;
   exit(-1);
 }
 
@@ -219,21 +147,4 @@ void write_desktop(const std::string & content, std::string filename) {
   outfile << content;
   outfile.close();
   return;
-}
-
-int main() {
-  #ifdef _WIN32
-  SetConsoleOutputCP(CP_UTF8);
-  SetConsoleCP(CP_UTF8);
-  #endif
-  std::string ep_id_str;
-  std::cin >> ep_id_str;
-  auto result_tmp = get_subtitle(ep_id_str);
-  std::string title = result_tmp.first;
-  std::string data = result_tmp.second;
-  std::string cht_subtitle = json2srt(data);
-  std::string chs_subtitle = cht2chs(cht_subtitle);
-  title = cht2chs(title);
-  write_desktop(chs_subtitle, title);
-  return 0;
 }

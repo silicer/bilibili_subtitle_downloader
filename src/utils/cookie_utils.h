@@ -7,5 +7,5 @@
 #include <Windows.h>
 #endif
 
-std::string get_cookie(const std::string &domain);
+std::string get_cookie(const std::string &domain, std::string browser);
 #endif

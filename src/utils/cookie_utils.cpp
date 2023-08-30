@@ -1,11 +1,16 @@
-#include "cookie_utils.h"
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <unordered_map>
+
 #include <nlohmann/json.hpp>
 #include <cryptopp/aes.h>
 #include <cryptopp/gcm.h>
 #include <cryptopp/filters.h>
-#include <iostream>
+#include <boost/algorithm/string.hpp>
+
+#include "cookie_utils.h"
+
 
 #ifdef _WIN32
 #include <sqlite3.h>
@@ -16,6 +21,11 @@
 #endif
 
 using json = nlohmann::json;
+
+std::unordered_map<std::string, std::string> cases = {
+  {"edge", "/AppData/Local/Microsoft/Edge/User Data/"},
+  {"chrome", "/AppData/Local/Google/Chrome/User Data/"}
+};
 
 std::string base64_decode(const std::string &in) {
   std::string out;
@@ -41,14 +51,12 @@ std::string base64_decode(const std::string &in) {
 }
 
 #ifdef _WIN32
-std::vector<byte> get_decrypted_aes_key() {
-  std::string local_state_path = static_cast<std::string>(getenv(HOME_ENV)) +
-                                 "/AppData/Local/Microsoft/Edge/User Data/"
-                                 "Local State";
+std::vector<byte> get_decrypted_aes_key(const std::string & browser) {
+  std::string local_state_path = static_cast<std::string>(getenv(HOME_ENV)) + cases[browser] + "Local State";
   std::ifstream local_state_file(local_state_path);
 
   if (!local_state_file.is_open()) {
-    std::cerr << "Error: Failed to open file." << std::endl;
+    std::cerr << "Error: Failed to open 'Local State'." << std::endl;
     exit(-1);
   }
 
@@ -128,10 +136,13 @@ std::string decrypt_with_aes_gcm(const std::string &encrypted_data, const std::v
 }
 
 // A function that returns a cookie string reading of a specific domain from a cookie file of Chrome
-std::string get_cookie(const std::string &domain) {
-  std::string cookie_path = static_cast<std::string>(getenv(HOME_ENV)) +
-                            "/AppData/Local/Microsoft/Edge/User Data/"
-                            "Default/Network/Cookies";
+std::string get_cookie(const std::string &domain, std::string browser) {
+  boost::algorithm::to_lower(browser);
+  if (cases.find(browser) == cases.end()) {
+    std::cerr << "Unsupported browser. Use Microsoft Edge or Google Chrome please." << std::endl;
+    exit(-1);
+  }
+  std::string cookie_path = static_cast<std::string>(getenv(HOME_ENV)) + cases[browser] + "Default/Network/Cookies";
   sqlite3 *db;
   sqlite3_stmt *stmt;
   int rc = sqlite3_open(cookie_path.c_str(), &db);
@@ -158,7 +169,7 @@ std::string get_cookie(const std::string &domain) {
   encrypted_data = encrypted_data.substr(12);
   sqlite3_finalize(stmt);
   sqlite3_close(db);
-  auto aes_key = get_decrypted_aes_key();
+  auto aes_key = get_decrypted_aes_key(browser);
   std::string cookie = decrypt_with_aes_gcm(encrypted_data, aes_key, iv);
   return cookie;
 }

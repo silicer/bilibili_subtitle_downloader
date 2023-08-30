@@ -1,15 +1,19 @@
-#include <cpr/cpr.h>
 #include <chrono>
 #include <codecvt>
+#include <locale>
+
 #include <filesystem>
 #include <fstream>
+
 #include <iomanip>
 #include <iostream>
-#include <locale>
-#include <nlohmann/json.hpp>
 #include <ostream>
 #include <regex>
 #include <string>
+
+#include <cpr/cpr.h>
+#include <nlohmann/json.hpp>
+#include <argparse/argparse.hpp>
 
 #include "utils/cookie_utils.h"
 
@@ -22,7 +26,7 @@
 
 using json = nlohmann::json;
 
-std::pair<std::string, std::string> get_subtitle(std::string ep_id);
+std::pair<std::string, std::string> get_subtitle(const std::string & ep_id, const std::string & cookie);
 std::string json2srt(const std::string & data);
 std::string cht2chs(const std::string & content);
 void write_desktop(const std::string & content, std::string filename);
@@ -32,17 +36,43 @@ const std::string MEDIA_INFO_HOST =
 const std::string SUBTITLE_INFO_HOST = "https://api.bilibili.com/x/player/v2";
 const std::string CONVERTER_URL = "https://api.zhconvert.org/convert";
 
-int main() {
+int main(int argc, char * argv[]) {
   #ifdef _WIN32
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
   #endif
+
+  argparse::ArgumentParser program("Bilibili Subtitle Downlodaer", "0.1.1");
+  program.add_argument("-c", "--cookie")
+    .default_value(std::string(""))
+    .help("Specify the cookie.");
+  program.add_argument("-e", "--episode")
+    .default_value(std::string(""))
+    .help("Specify the episode id.");
+  program.add_argument("-b", "--browser")
+    .default_value(std::string("Edge"))
+    .help("Specify the browser.");
+  try {
+    program.parse_args(argc, argv);
+  }
+  catch (const std::runtime_error & err) {
+    std::cerr << err.what() << std::endl;
+    std::cerr << program;
+    exit(1);
+  }
+
+  std::string cookie;
+  if (program.is_used("--cookie")) cookie = program.get<std::string>("--cookie");
+  else cookie = get_cookie(".bilibili.com", program.get<std::string>("--browser"));
+
   std::string ep_id_str;
-  std::cout << "Please input the episode id: ";
-  std::cin >> ep_id_str;
-  auto result_tmp = get_subtitle(ep_id_str);
-  std::string title = result_tmp.first;
-  std::string data = result_tmp.second;
+  if (program.is_used("--episode")) ep_id_str = program.get<std::string>("--episode");
+  else {
+    std::cout << "Please input the episode id: ";
+    std::cin >> ep_id_str;
+  }
+
+  auto [title, data] = get_subtitle(ep_id_str, cookie);
   std::string cht_subtitle = json2srt(data);
   std::string chs_subtitle = cht2chs(cht_subtitle);
   title = cht2chs(title);
@@ -50,8 +80,7 @@ int main() {
   return 0;
 }
 
-std::pair<std::string, std::string> get_subtitle(std::string ep_id) {
-  std::string cookie = get_cookie(".bilibili.com");
+std::pair<std::string, std::string> get_subtitle(const std::string & ep_id, const std::string & cookie) {
   cpr::Session session;
   session.SetCookies(cpr::Cookies{{"SESSDATA", cookie}});
   session.SetHeader(cpr::Header{{"User-Agent", "curl/8.0.1"}, {"Cookie", "SESSDATA=" + cookie}});

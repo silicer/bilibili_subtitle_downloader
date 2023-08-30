@@ -26,8 +26,12 @@ include(CPack)
 
 find_package(cpr CONFIG REQUIRED)
 target_link_libraries(Subtitle PRIVATE cpr::cpr)
+
 find_package(nlohmann_json CONFIG REQUIRED)
 set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
 target_link_libraries(Subtitle PRIVATE nlohmann_json::nlohmann_json)
+
+find_package(argparse CONFIG REQUIRED)
+target_link_libraries(Subtitle PRIVATE argparse::argparse)
 
 target_link_libraries(Subtitle PRIVATE CookieUtils)

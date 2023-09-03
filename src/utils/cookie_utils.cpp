@@ -27,8 +27,8 @@ std::unordered_map<std::string, std::string> cases = {
   {"chrome", "/AppData/Local/Google/Chrome/User Data/"}
 };
 
-std::string base64_decode(const std::string &in) {
-  std::string out;
+std::vector<byte> base64_decode(const std::string &in) {
+  std::vector<byte> out;
 
   std::vector<int> T(256, -1);
   for (int i = 0; i < 64; i++) {
@@ -62,8 +62,8 @@ std::vector<byte> get_decrypted_aes_key(const std::string & browser) {
 
   json local_state = json::parse(local_state_file);
   std::string aes_key = local_state["os_crypt"]["encrypted_key"];
-  std::string aes_key_decoded = base64_decode(aes_key);
-  aes_key_decoded = aes_key_decoded.substr(5);
+  std::vector<byte> aes_key_decoded = base64_decode(aes_key);
+  aes_key_decoded.assign(aes_key_decoded.begin() + 5, aes_key_decoded.end());
 
   DATA_BLOB input;
   DATA_BLOB output;
@@ -115,13 +115,13 @@ std::vector<byte> get_decrypted_aes_key() {
 }
 #endif
 
-std::string decrypt_with_aes_gcm(const std::string &encrypted_data, const std::vector<byte> &key, const std::string &iv) {
+std::string decrypt_with_aes_gcm(const std::vector<byte> &encrypted_data, const std::vector<byte> &key, const std::vector<byte> &iv) {
     try {
         CryptoPP::GCM<CryptoPP::AES>::Decryption decryption;
         decryption.SetKeyWithIV(key.data(), key.size(), (byte*)iv.data(), iv.size());
 
         std::string decrypted_data;
-        CryptoPP::StringSource ss(encrypted_data, true,
+        CryptoPP::VectorSource vs(encrypted_data, true,
             new CryptoPP::AuthenticatedDecryptionFilter(decryption,
                 new CryptoPP::StringSink(decrypted_data)
             )
@@ -162,11 +162,17 @@ std::string get_cookie(const std::string &domain, std::string browser) {
     std::cerr << "Error: Failed to step." << std::endl;
     exit(-1);
   }
-  std::string encrypted_value(
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0)));
-  std::string encrypted_data = encrypted_value.substr(3);
-  std::string iv = encrypted_data.substr(0, 12);
-  encrypted_data = encrypted_data.substr(12);
+  const byte * data_ptr = reinterpret_cast<const byte *>(sqlite3_column_text(stmt, 0));
+  int data_length = sqlite3_column_bytes(stmt, 0);
+  std::vector<byte> encrypted_value(data_ptr, data_ptr + data_length);
+  // std::string encrypted_value(
+  //     reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0)));
+  // std::string encrypted_data = encrypted_value.substr(3);
+  std::vector<byte> encrypted_data(encrypted_value.begin() + 3, encrypted_value.end());
+  // std::string iv = encrypted_data.substr(0, 12);
+  std::vector<byte> iv(encrypted_data.begin(), encrypted_data.begin() + 12);
+  // encrypted_data = encrypted_data.substr(12);
+  encrypted_data.assign(encrypted_data.begin() + 12, encrypted_data.end());
   sqlite3_finalize(stmt);
   sqlite3_close(db);
   auto aes_key = get_decrypted_aes_key(browser);
